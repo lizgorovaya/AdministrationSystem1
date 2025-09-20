@@ -73,6 +73,332 @@ API-сервис является центральным компонентом 
 
 ## Детали реализации
 
+# Распространённые ошибки при разработке на Laravel
+
+Разработка на Laravel даёт множество встроенных инструментов для ускорения работы. Однако именно из-за этого программисты часто допускают ошибки, которые приводят к некачественному коду. Наиболее распространённые из них связаны с:  
+
+- Перегрузкой контроллеров  
+- Дублированием логики  
+- Неправильной работой с базой данных  
+- Отсутствием обработки ошибок  
+- Нарушением архитектурных принципов  
+
+Часто вся логика — от валидации входных данных и бизнес-правил до взаимодействия с базой и отправки уведомлений — пишется в одном методе. Такой код трудно поддерживать и тестировать.  
+
+```php
+public function store(Request $request)
+{
+    if (!$request->has('email')) {
+        return response()->json(['error' => 'Email is required'], 400);
+    }
+
+    $user = new User();
+    $user->name = $request->input('name');
+    $user->email = $request->input('email');
+    $user->save();
+
+    Mail::to($user->email)->send(new WelcomeMail($user));
+
+    return response()->json(['message' => 'User created']);
+}
+
+```
+
+Исправление заключается в разделении ответственности. Валидацию стоит вынести в отдельный FormRequest, бизнес-логику – в сервисный слой, а отправку писем – в очередь.
+
+```php
+// Хороший код
+public function store(CreateUserRequest $request, UserService $service)
+{
+    $user = $service->createUser($request->validated());
+    return response()->json(['message' => 'User created']);
+}
+
+```
+
+Не менее частой ошибкой является дублирование кода. В приложениях для администрирования киосков, например, активация и деактивация может повторяться в разных контроллерах.
+
+```php
+// Плохой код
+$user->status = 'inactive';
+$user->save();
+
+$kiosk->status = 'inactive';
+$kiosk->save();
+
+```
+
+Чтобы избежать повторов, стоит вынести логику в общий метод.
+
+```php
+// Хороший код
+public function deactivate(Model $entity)
+{
+    $entity->status = 'inactive';
+    $entity->save();
+}
+
+```
+
+Серьёзной проблемой является неэффективная работа с базой данных. Одной из типичных ошибок считается загрузка всех записей через Model::all(), даже если нужно обработать миллионы строк.
+
+```php
+// Плохой код
+$logs = LogEntry::all();
+foreach ($logs as $log) {
+    // обработка
+}
+```
+
+Это приводит к утечке памяти. Более эффективный подход – использовать chunk:
+
+```php
+// Хороший код
+LogEntry::chunk(500, function ($logs) {
+    foreach ($logs as $log) {
+        // обработка
+    }
+});
+
+```
+
+Другая проблема связана с так называемой ошибкой N+1 запросов. Она возникает, когда для каждой записи делается отдельный запрос к связанным данным.
+
+```php
+// Плохой код
+$users = User::all();
+foreach ($users as $user) {
+    echo $user->profile->address;
+}
+```
+
+Laravel при этом выполняет десятки дополнительных запросов. Исправление заключается в использовании жадной загрузки:
+
+```php
+// Хороший код
+$users = User::with('profile')->get();
+foreach ($users as $user) {
+    echo $user->profile->address;
+}
+```
+
+Проблемой можно назвать и отсутствие обработки ошибок. Например, попытка получить пользователя по ID без проверки может привести к фатальной ошибке:
+
+```php
+// Плохой код
+$user = User::find($id);
+return $user->email;
+```
+
+Гораздо лучше обрабатывать ситуации, когда объект не найден:
+
+```php
+// Хороший код
+$user = User::find($id);
+if (!$user) {
+    return response()->json(['error' => 'User not found'], 404);
+}
+return $user->email;
+```
+
+Часто встречается и плохой нейминг функций и переменных. Код с названиями вроде doIt($a, $b) непонятен даже автору спустя время.
+
+```php
+// Плохой код
+function doIt($a, $b) {
+    return $a + $b;
+}
+```
+
+Хорошее название делает код самодокументируемым:
+
+```php
+// Хороший код
+function calculateInvoiceTotal($subtotal, $tax) {
+    return $subtotal + $tax;
+}
+```
+
+Ещё одна распространённая ошибка – использование временных переменных, которые не добавляют смысла.
+
+```php
+// Плохой код
+$tmp = $request->input('location');
+$kiosk->location = $tmp;
+```
+
+Запись можно упростить:
+
+```php
+// Хороший код
+$kiosk->location = $request->input('location');
+
+Отдельно стоит выделить захардкоденные значения в коде. Например:
+
+```php
+// Плохой код
+if ($user->role === 'admin') {
+    // особая логика
+}
+```
+
+Лучше использовать константы или конфиги:
+
+```php
+// Хороший код
+if ($user->role === User::ROLE_ADMIN) {
+    // особая логика
+}
+```
+
+# Распространённые проблемы и ошибки при разработке на Angular
+
+Во фронтенд-разработке на Angular можно встретить похожие по сути проблемы, что и в Laravel, но проявляются они по-своему. Основная из них связана с перегруженными компонентами.  
+
+Разработчики часто помещают и бизнес-логику, и работу с API, и управление состоянием прямо в компонент. Такой подход затрудняет сопровождение и тестирование.  
+
+---
+
+```typescript
+/Плохой пример
+@Component({
+  selector: 'app-users',
+  templateUrl: './users.component.html'
+})
+export class UsersComponent {
+  users: any[] = [];
+  constructor(private http: HttpClient) {
+    this.http.get<any[]>('/api/users').subscribe(data => {
+      this.users = data.filter(u => u.active);
+    });
+  }
+}
+```
+
+Лучшим решением является вынесение логики работы с данными в отдельный сервис, а компонент должен только подписываться на поток данных.
+
+```typescript
+// Хороший код (разделение обязанностей)
+@Injectable({ providedIn: 'root' })
+export class UserService {
+  constructor(private http: HttpClient) {}
+  getActiveUsers() {
+    return this.http.get<User[]>('/api/users')
+      .pipe(map(users => users.filter(u => u.active)));
+  }
+}
+```
+```typescript
+@Component({
+  selector: 'app-users',
+  templateUrl: './users.component.html'
+})
+export class UsersComponent {
+  users$ = this.userService.getActiveUsers();
+  constructor(private userService: UserService) {}
+}
+```
+
+Другая распространённая ошибка связана с утечками памяти из-за отсутствия отписки от подписок. Когда в компоненте используется subscribe, но отписка в ngOnDestroy не реализована, память продолжает удерживать подписки даже после удаления компонента.
+
+```typescript
+// Плохой код (подписка без отписки)
+ngOnInit() {
+  this.http.get('/api/data').subscribe(result => {
+    this.data = result;
+  });
+}
+```
+
+Исправлением является либо явная отписка с помощью Subject и takeUntil, либо использование async pipe, который сам управляет подпиской.
+
+```typescript
+// Хороший код (async pipe)
+data$ = this.http.get('/api/data');
+<div *ngIf="data$ | async as data">
+  {{ data }}
+</div>
+```
+
+Часто встречается и проблема слишком сложной логики прямо в шаблонах. Например:
+
+```typescript
+<!-- Плохой код -->
+<div>{{ users.filter(u => u.active).map(u => u.name).join(', ') }}</div>
+```
+
+Каждый цикл изменения состояния Angular будет заново выполнять фильтрацию и объединение строк, что негативно сказывается на производительности. Логичнее вынести подготовку данных в компонент:
+
+```typescript
+// Хороший код
+activeUserNames = '';
+ngOnInit() {
+  this.userService.getActiveUsers().subscribe(users => {
+    this.activeUserNames = users.map(u => u.name).join(', ');
+  });
+}
+
+<div>{{ activeUserNames }}</div>
+
+```
+
+Неудачные имена переменных и методов также характерны для Angular. Код с переменными вроде d, arr, tmp становится нечитаемым:
+
+```typescript
+// Плохой код
+let d = this.http.get('/api/kiosks');
+
+```
+
+Понятные названия делают код самодокументируемым:
+
+```typescript
+let kiosks$ = this.http.get<Kiosk[]>('/api/kiosks');
+```
+
+В Angular иногда встречается и чрезмерное использование any, что убивает преимущества TypeScript.
+
+```typescript
+// Плохой код
+users: any[] = [];
+```
+
+Гораздо правильнее использовать строгую типизацию:
+
+```typescript
+// Хороший код
+users: User[] = [];
+```
+
+Оптимизационные ошибки также играют важную роль. Например, использование *ngFor без ключа trackBy при больших списках приводит к тому, что Angular каждый раз пересоздаёт все элементы при малейшем изменении.
+
+```typescript
+<!-- Плохой код -->
+<li *ngFor="let user of users">{{ user.name }}</li>
+```
+
+Гораздо лучше использовать trackBy, чтобы Angular понимал, какие элементы изменились, а какие остались прежними.
+
+```typescript
+<!-- Хороший код -->
+<li *ngFor="let user of users; trackBy: trackById">{{ user.name }}</li>
+
+trackById(index: number, item: User) {
+  return item.id;
+}
+```
+
+Неоптимальная работа с состоянием приложения также относится к типичным проблемам. Хранение сложных состояний прямо в компонентах затрудняет развитие кода. Лучшим решением является использование централизованного управления состоянием (NgRx или аналогичных решений).
+
+
+
+
+
+
+
+
+
+
 ### UML-диаграммы
 
 ### Спецификация API
@@ -95,29 +421,11 @@ API-сервис является центральным компонентом 
 
 ## Лицензия
 
-MIT License
-
-Copyright (c) 2025 Gorovaya Elizabeth
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Этот проект лицензирован по лицензии MIT - подробности представлены в файле [[License.md|LICENSE.md]]
 
 
 ## Контакты
+
+Автор: email
 
 +375291965762 Елизавета
