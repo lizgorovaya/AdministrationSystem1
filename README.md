@@ -589,7 +589,284 @@ trackById(index: number, item: User) {
 
 ### Unit-тесты
 
+. Модульное тестирование (unit testing) – это процесс проверки отдельных компонентов или модулей программы на корректность работы. Основная цель модульного тестирования – убедиться, что каждая отдельная часть кода выполняет свои функции правильно, независимо от других частей системы. Модули могут быть отдельными функциями, методами или классами, и те-стируются они в изоляции от остального приложения.
+Процесс модульного тестирования обычно начинается с определения функционала модуля и возможных сценариев его работы. Разрабатываются тест-кейсы, которые включают набор входных данных и ожидаемый резуль-тат работы модуля. Тесты должны покрывать все логические ветки кода, включая как стандартные ситуации, так и граничные или исключительные случаи. Это помогает выявить ошибки на раннем этапе разработки, когда их исправление проще и дешевле. Ниже представлен листинг модульного тест класса KioskLogsService.php.
+```php
+<?php
+
+namespace Tests\Unit;
+
+use App\Services\KioskLogService;
+use App\Models\KioskLog;
+use Tests\TestCase;
+use Mockery;
+
+class KioskLogServiceTest extends TestCase
+{
+    public function test_save_logs()
+    {
+        $repo = Mockery::mock(KioskLog::class);
+
+        $repo->shouldReceive('insert')->once()->andReturn(true);
+
+        $service = new KioskLogService($repo);
+
+        $result = $service->saveLogs(1, [
+            ['level' => 'info', 'message' => 'test']
+        ]);
+
+        $this->assertTrue($result);
+    }
+}
+```
+
+Для класса KioskServiceTest.php
+
+```php
+<?php
+
+namespace Tests\Unit;
+
+use App\Services\KioskService;
+use App\Models\Kiosk;
+use Tests\TestCase;
+use Mockery;
+
+class KioskServiceTest extends TestCase
+{
+    public function test_create_kiosk()
+    {
+        $repo = Mockery::mock(Kiosk::class);
+        $repo->shouldReceive('create')->once()->andReturn([
+            'id' => 1,
+            'serial_number' => 'ABC123'
+        ]);
+
+        $service = new KioskService($repo);
+
+        $result = $service->create([
+            'serial_number' => 'ABC123'
+        ]);
+
+        $this->assertEquals(1, $result['id']);
+        $this->assertEquals('ABC123', $result['serial_number']);
+    }
+
+    public function test_get_kiosk()
+    {
+        $repo = Mockery::mock(Kiosk::class);
+        $repo->shouldReceive('find')->with(1)->andReturn([
+            'id' => 1,
+            'serial_number' => 'XYZ'
+        ]);
+
+        $service = new KioskService($repo);
+        $result = $service->getById(1);
+
+        $this->assertEquals('XYZ', $result['serial_number']);
+    }
+}
+```
+
+Для класса KioskVersionServiceTest.php
+
+```php
+
+<?php
+
+namespace Tests\Unit;
+
+use App\Services\KioskVersionService;
+use App\Models\AppVersion;
+use Tests\TestCase;
+use Mockery;
+
+class KioskVersionServiceTest extends TestCase
+{
+    public function test_get_latest_version()
+    {
+        $repo = Mockery::mock(AppVersion::class);
+        $repo->shouldReceive('latest->first')->andReturn([
+            'version' => '2.0.0'
+        ]);
+
+        $service = new KioskVersionService($repo);
+        $result = $service->getLatest();
+
+        $this->assertEquals('2.0.0', $result['version']);
+    }
+}
+```
+
+Для класса KioskConfigServiceTest.php
+
+```php
+
+<?php
+
+namespace Tests\Unit;
+
+use App\Services\KioskConfigService;
+use App\Models\KioskConfig;
+use Tests\TestCase;
+use Mockery;
+
+class KioskConfigServiceTest extends TestCase
+{
+    public function test_get_config()
+    {
+        $repo = Mockery::mock(KioskConfig::class);
+
+        $repo->shouldReceive('where->first')->andReturn([
+            'config' => ['theme' => 'dark'],
+            'updated_at' => now()
+        ]);
+
+        $service = new KioskConfigService($repo);
+        $result = $service->getConfig(10);
+
+        $this->assertEquals('dark', $result['config']['theme']);
+    }
+}
+```
+
+
+	Все модульные тесты были успешно выполнены, и их результаты под-твердили корректную работу проверяемых компонентов. Каждый тест прове-рял отдельную функцию или метод в изоляции, обеспечивая уверенность в том, что изменения в коде не нарушают существующую функциональность. Ошибок и сбоев при выполнении тестов не выявлено, что позволяет считать систему стабильной на уровне модульного тестирования.
+
+
 ### Интеграционные тесты
+
+Интеграционное тестирование направлено на проверку взаимодействия раз-личных модулей и компонентов системы в целом. В отличие от модульного тестирования, которое проверяет отдельные функции или классы в изоляции, интеграционные тесты оценивают, как компоненты работают вместе, коррект-но ли передаются данные между слоями и правильно ли обрабатываются за-просы. Это позволяет выявить ошибки на стыке модулей, которые невозмож-но обнаружить при одиночном тестировании функций.
+В процессе интеграционного тестирования часто используются реаль-ные версии баз данных, сервисов и внешних API. Это помогает моделировать реальные сценарии использования приложения и проверять его поведение в условиях, максимально приближенных к рабочей среде. Тесты могут вклю-чать проверки контроллеров, сервисов, репозиториев и других компонентов, гарантируя, что система как единое целое функционирует корректно. Ниже представлен листинг интеграционных тестов.
+
+```php
+<?php
+
+namespace Tests\Feature;
+
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class KioskLogTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_kiosk_can_send_logs()
+    {
+        $token = $this->kioskToken();
+
+        $payload = [
+            'logs' => [
+                ['level' => 'info', 'message' => 'System OK'],
+                ['level' => 'error', 'message' => 'Camera offline']
+            ]
+        ];
+
+        $response = $this->postJson('/api/kiosk/logs', $payload, [
+            'Authorization' => "Bearer {$token}"
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJson([
+                'saved' => true
+            ]);
+    }
+}
+
+<?php
+
+namespace Tests\Feature;
+
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class KioskRegistrationTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_kiosk_can_register()
+    {
+        $payload = [
+            'serial_number' => 'KIOSK-100',
+            'location' => 'Main Hall',
+            'app_version' => '1.0.0'
+        ];
+
+        $response = $this->postJson('/api/kiosk/register', $payload);
+
+        $response->assertStatus(201)
+            ->assertJsonStructure([
+                'id',
+                'serial_number',
+                'token'
+            ]);
+    }
+}
+
+<?php
+
+namespace Tests\Feature;
+
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+use App\Models\KioskConfig;
+
+class KioskConfigTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_kiosk_can_get_config()
+    {
+        $token = $this->kioskToken();
+
+        // Предсоздаём конфигурацию
+        KioskConfig::factory()->create([
+            'kiosk_id' => 1,
+            'config' => ['theme' => 'dark']
+        ]);
+
+        $response = $this->getJson('/api/kiosk/config', [
+            'Authorization' => "Bearer {$token}"
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'config',
+                'updated_at'
+            ])
+            ->assertJsonPath('config.theme', 'dark');
+    }
+}
+
+<?php
+
+namespace Tests\Feature;
+
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class KioskHeartbeatTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_kiosk_can_send_heartbeat()
+    {
+        $token = $this->kioskToken();
+
+        $response = $this->postJson('/api/kiosk/heartbeat', [], [
+            'Authorization' => "Bearer {$token}"
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'status' => 'ok'
+            ]);
+    }
+}
+```
+
+Все интеграционные тесты были выполнены корректно: каждый сцена-рий, включая взаимодействие контроллеров, сервисов и репозиториев, про-шёл успешно, а ожидаемые результаты совпали с фактическими. Это под-тверждает стабильность и корректность работы системы на уровне интегра-ции всех модулей.
+
 
 ## Установка и запуск
 
